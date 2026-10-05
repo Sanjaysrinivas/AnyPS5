@@ -457,6 +457,7 @@ enum class IrOpcode : std::uint16_t {
     ImageAtomicCmpSwap64,
     GetAttribute,
     GetInterpolationParameter,
+    GetInterpolationParameterF16,
     SetAttribute,
     ControlNop,
     Waitcnt,

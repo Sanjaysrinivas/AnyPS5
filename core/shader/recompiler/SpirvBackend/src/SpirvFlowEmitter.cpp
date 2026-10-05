@@ -672,6 +672,7 @@ void EmitDirectInstruction(SpirvValueEmitContext& ctx, const IrValue& inst) {
         case IrOpcode::ImageAtomicCmpSwap64: return Invoke(EmitImageAtomicCmpSwap64, ctx, inst);
         case IrOpcode::GetAttribute: return Invoke(EmitGetAttribute, ctx, inst);
         case IrOpcode::GetInterpolationParameter: return Invoke(EmitGetInterpolationParameter, ctx, inst);
+        case IrOpcode::GetInterpolationParameterF16: return Invoke(EmitGetInterpolationParameterF16, ctx, inst);
         case IrOpcode::SetAttribute: return Invoke(EmitSetAttribute, ctx, inst);
         case IrOpcode::ControlNop: return Invoke(EmitControlNop, ctx, inst);
         case IrOpcode::Waitcnt: return Invoke(EmitWaitcnt, ctx, inst);

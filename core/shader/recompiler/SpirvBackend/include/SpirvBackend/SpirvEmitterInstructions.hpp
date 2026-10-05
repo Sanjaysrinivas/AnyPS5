@@ -78,6 +78,7 @@ std::uint32_t EmitWriteLane(SpirvValueEmitContext& ctx, const IrValue& inst);
 std::uint32_t EmitPermlane16U32(SpirvValueEmitContext& ctx, const IrValue& inst);
 std::uint32_t EmitGetAttribute(SpirvValueEmitContext& ctx, const IrValue& inst);
 std::uint32_t EmitGetInterpolationParameter(SpirvValueEmitContext& ctx, const IrValue& inst);
+std::uint32_t EmitGetInterpolationParameterF16(SpirvValueEmitContext& ctx, const IrValue& inst);
 void EmitSetAttribute(SpirvValueEmitContext& ctx, const IrValue& inst);
 std::uint32_t EmitGetShaderBase(SpirvValueEmitContext& ctx);
 std::uint32_t EmitShaderClock(SpirvValueEmitContext& ctx, const IrValue& inst);

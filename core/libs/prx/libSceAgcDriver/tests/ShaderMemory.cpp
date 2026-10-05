@@ -1172,6 +1172,19 @@ void verifyPixelParameterSlots() {
     expectFailure([] { static_cast<void>(recompileSlots({0x423u, 0x3u}, shared)); }, "passes its vertices through unchanged", "an interpolated pass-through input was accepted");
 }
 
+void verifyF16PixelParameterSlots() {
+    static constexpr std::array<std::uint32_t, 7> high{0xd7420002u, 0x00020100u, 0xd75a0003u, 0x040a0300u, 0xf800180fu, 0x03030303u, 0xbf810000u};
+    static constexpr std::array<std::uint32_t, 7> low{0xd7420002u, 0x00020000u, 0xd75a0003u, 0x040a0200u, 0xf800180fu, 0x03030303u, 0xbf810000u};
+    auto inputs = slotInputs({0x03080003u}, high);
+    require(inputs.size() == 1u && inputs[0].first == 3u && inputs[0].second, "a 16-bit interpolated input was not read per vertex at its slot");
+    inputs = slotInputs({0x03080023u}, high);
+    require(inputs.size() == 1u && inputs[0].first == 3u && inputs[0].second, "an input with a defaulted low half was not read per vertex for its high half");
+    require(slotInputs({0x03180023u}, high).empty(), "an input whose high half is defaulted was declared for a high-half read");
+    require(slotInputs({0x03080023u}, low).empty(), "an input whose low half is defaulted was declared for a low-half read");
+    inputs = slotInputs({0x03180003u}, low);
+    require(inputs.size() == 1u && inputs[0].first == 3u && inputs[0].second, "an input with a defaulted high half was not read per vertex for its low half");
+}
+
 }
 
 void verifyComputedTexelOffsets() {
@@ -1769,6 +1782,7 @@ int main(int argc, char** argv) {
         verifyLegacyPixelRequests();
         verifyPixelExportReplay();
         verifyPixelParameterSlots();
+        verifyF16PixelParameterSlots();
         verifyComputedTexelOffsets();
         verifyShaderClockScopes();
         verifyUnnormalizedSamplers();

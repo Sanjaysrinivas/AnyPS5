@@ -498,6 +498,7 @@ constexpr std::array<OpcodeMeta, static_cast<std::size_t>(IrOpcode::Count)> Meta
     makeMeta("ImageAtomicCmpSwap64", U64, ImageResource, ImageAddress, U64, U64, U1),
     makeMeta("GetAttribute", U32, U32, U32),
     makeMeta("GetInterpolationParameter", U32, U32, U32, U32),
+    makeMeta("GetInterpolationParameterF16", F32, U32, U32, U32, U32),
     makeMeta("SetAttribute", Void, U32x4, U1),
     makeMeta("ControlNop", Void),
     makeMeta("Waitcnt", Void),
