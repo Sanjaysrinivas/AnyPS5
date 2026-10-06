@@ -189,17 +189,29 @@ float Delta(const std::array<std::uint32_t, 3>& values, std::uint32_t vertex) {
 }
 
 float FirstStep(float delta, float coordinate, float origin) {
-    const float product = delta * coordinate;
-    return product + origin;
+    return std::fma(delta, coordinate, origin);
 }
 
-float SecondStep(float delta, float coordinate, float firstStep) {
-    const float product = delta * coordinate;
-    return product + firstStep;
+double SecondStep(float delta, float coordinate, float firstStep) {
+    const double product = static_cast<double>(delta) * static_cast<double>(coordinate);
+    const double sum = product + firstStep;
+    const double productPart = sum - firstStep;
+    const double error = (product - productPart) + (firstStep - (sum - productPart));
+    if (error == 0.0 || (std::bit_cast<std::uint64_t>(sum) & 1u) != 0u) return sum;
+    return std::nextafter(sum, error > 0.0 ? INFINITY : -INFINITY);
 }
 
-float Saturate(float value) {
-    return value > 0.0f ? std::min(value, 1.0f) : 0.0f;
+double Saturate(double value) {
+    return value > 0.0 ? std::min(value, 1.0) : 0.0;
+}
+
+std::uint32_t HalfOf(double value) {
+    if (value == 0.0) return std::signbit(value) ? 0x8000u : 0u;
+    const int step = std::max(std::ilogb(value) - 10, -24);
+    const double rounded = std::ldexp(std::nearbyint(std::ldexp(value, -step)), step);
+    if (std::fabs(rounded) > 65504.0) return std::signbit(value) ? 0xfc00u : 0x7c00u;
+    if (rounded == 0.0) return std::signbit(value) ? 0x8000u : 0u;
+    return FloatToHalf(static_cast<float>(rounded));
 }
 
 void Check(std::uint32_t waveSize) {
@@ -221,11 +233,11 @@ void Check(std::uint32_t waveSize) {
             result[0],
             result[1],
             std::bit_cast<std::uint32_t>(lowX),
-            0xabcd0000u | FloatToHalf(SecondStep(Delta(LowX, 2), j, lowX)),
-            0x12340000u | FloatToHalf(SecondStep(Delta(HighX, 2), j, highX)),
+            0xabcd0000u | HalfOf(SecondStep(Delta(LowX, 2), j, lowX)),
+            0x12340000u | HalfOf(SecondStep(Delta(HighX, 2), j, highX)),
             std::bit_cast<std::uint32_t>(highY),
-            FloatToHalf(SecondStep(Delta(HighY, 2), j, highY)),
-            FloatToHalf(Saturate(SecondStep(Delta(LowX, 2), j, lowX))),
+            HalfOf(SecondStep(Delta(HighY, 2), j, highY)),
+            HalfOf(Saturate(SecondStep(Delta(LowX, 2), j, lowX))),
             std::bit_cast<std::uint32_t>(FirstStep(0.0f, i, 1.0f)),
             std::bit_cast<std::uint32_t>(FirstStep(0.0f, i, 0.0f)),
             std::bit_cast<std::uint32_t>(FirstStep(Delta(LowX, 1), -i, HalfToFloat(LowX[0]))),

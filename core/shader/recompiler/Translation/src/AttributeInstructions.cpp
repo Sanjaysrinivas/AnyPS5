@@ -106,16 +106,12 @@ IrF32 TranslationContext::interpolationParameterF16(const RdnaInstruction& inst,
 void TranslationContext::vInterpP1F16(const RdnaInstruction& inst) {
     const IrF32 delta = interpolationParameterF16(inst, 0u);
     const IrF32 origin = inst.op == RdnaOpcode::VInterpP1lvF16 ? readF16AsF32(inst.source3) : interpolationParameterF16(inst, 2u);
-    auto& product = ir.Emit(IrOpcode::FPMul32, IrType::F32, {&delta.Value(), readOperand(inst.source0, IrType::F32)});
-    auto& result = ir.Emit(IrOpcode::FPAdd32, IrType::F32, {&product, &origin.Value()});
-    writeOperand(inst.destination, &result);
+    writeOperand(inst.destination, &ir.Emit(IrOpcode::FPInterpolateF32, IrType::F32, {&delta.Value(), readOperand(inst.source0, IrType::F32), &origin.Value()}));
 }
 
 void TranslationContext::vInterpP2F16(const RdnaInstruction& inst) {
     const IrF32 delta = interpolationParameterF16(inst, 1u);
-    auto& product = ir.Emit(IrOpcode::FPMul32, IrType::F32, {&delta.Value(), readOperand(inst.source0, IrType::F32)});
-    auto& result = ir.Emit(IrOpcode::FPAdd32, IrType::F32, {&product, readOperand(inst.source3, IrType::F32)});
-    writeF16(inst.destination, IrF32(result));
+    writeF16(inst.destination, IrF32(ir.Emit(IrOpcode::FPInterpolateF16, IrType::F32, {&delta.Value(), readOperand(inst.source0, IrType::F32), readOperand(inst.source3, IrType::F32)})));
 }
 
 void TranslationContext::eXP(const RdnaInstruction& inst) {

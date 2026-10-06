@@ -303,6 +303,8 @@ constexpr std::array<OpcodeMeta, static_cast<std::size_t>(IrOpcode::Count)> Meta
     makeMeta("FPSqrt64", U64, U64),
     makeMeta("FPTrigPreop64", U64, U64, U32),
     makeMeta("FPDot2F32F16", U32, U32, U32, U32),
+    makeMeta("FPInterpolateF32", F32, F32, F32, F32),
+    makeMeta("FPInterpolateF16", F32, F32, F32, F32),
     makeMeta("ConvertF32F64", F32, U64),
     makeMeta("ConvertF64F32", U64, F32),
     makeMeta("ConvertF64S32", U64, U32),
