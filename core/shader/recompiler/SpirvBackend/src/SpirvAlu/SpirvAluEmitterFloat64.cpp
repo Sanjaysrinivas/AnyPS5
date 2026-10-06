@@ -260,10 +260,16 @@ std::uint32_t Interpolate(SpirvEmitterState& state, std::uint32_t delta, std::ui
     const auto finite = F32BitsOfRounded(state, rounded);
     const auto inputs = std::array{Unary(state, spv::OpBitcast, u32, delta), Unary(state, spv::OpBitcast, u32, coordinate), Unary(state, spv::OpBitcast, u32, base)};
     const auto unbounded = Split(state, FromF64(state, Exact(state, spv::OpFAdd, product, FromF32Exact(state, base))));
-    auto special = Select(state, u32, Classify(state, Join(state, unbounded)).nan, ConstantU32(state, 0x7fc00000u), Binary(state, spv::OpBitwiseOr, u32, Binary(state, spv::OpBitwiseAnd, u32, unbounded.high, ConstantU32(state, 0x80000000u)), ConstantU32(state, 0x7f800000u)));
+    auto special = Select(state, u32, Classify(state, Join(state, unbounded)).nan, ConstantU32(state, 0xffc00000u), Binary(state, spv::OpBitwiseOr, u32, Binary(state, spv::OpBitwiseAnd, u32, unbounded.high, ConstantU32(state, 0x80000000u)), ConstantU32(state, 0x7f800000u)));
     auto nonFinite = NonFinite32(state, inputs[0]);
     for (const auto input : {inputs[1], inputs[2]}) nonFinite = Binary(state, spv::OpLogicalOr, TypeBool(state), nonFinite, NonFinite32(state, input));
-    for (auto it = inputs.rbegin(); it != inputs.rend(); ++it) special = Select(state, u32, Nan32(state, *it), Binary(state, spv::OpBitwiseOr, u32, *it, ConstantU32(state, 0x00400000u)), special);
+    const auto zero = [&](std::uint32_t bits) { return Binary(state, spv::OpIEqual, TypeBool(state), Binary(state, spv::OpBitwiseAnd, u32, bits, ConstantU32(state, 0x7fffffffu)), ConstantU32(state, 0u)); };
+    const auto infinite = [&](std::uint32_t bits) { return Binary(state, spv::OpIEqual, TypeBool(state), Binary(state, spv::OpBitwiseAnd, u32, bits, ConstantU32(state, 0x7fffffffu)), ConstantU32(state, 0x7f800000u)); };
+    const auto invalidProduct = Binary(state, spv::OpLogicalOr, TypeBool(state), Binary(state, spv::OpLogicalAnd, TypeBool(state), infinite(inputs[0]), zero(inputs[1])), Binary(state, spv::OpLogicalAnd, TypeBool(state), zero(inputs[0]), infinite(inputs[1])));
+    const auto quiet = [&](std::uint32_t bits) { return Binary(state, spv::OpBitwiseOr, u32, bits, ConstantU32(state, 0x00400000u)); };
+    special = Select(state, u32, Binary(state, spv::OpLogicalAnd, TypeBool(state), Nan32(state, inputs[2]), Unary(state, spv::OpLogicalNot, TypeBool(state), invalidProduct)), quiet(inputs[2]), special);
+    special = Select(state, u32, Nan32(state, inputs[1]), quiet(inputs[1]), special);
+    special = Select(state, u32, Nan32(state, inputs[0]), quiet(inputs[0]), special);
     return Unary(state, spv::OpBitcast, TypeF32(state), Select(state, u32, nonFinite, special, finite));
 }
 
