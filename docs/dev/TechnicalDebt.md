@@ -29,6 +29,31 @@ Throughout the project, every function at every stage either **does exactly what
 - [ulobjmgr](../../core/libs/prx/ulobjmgr/Export.cpp) registers no object: `_sceUlobjmgrRegisterObject` always hands out id 0 and `_sceUlobjmgrUnregisterObject` releases nothing, as shadPS4 does
 - [libSceHttp](../../core/libs/prx/libSceHttp/Export.cpp) - no request reaches the network, so `sceHttpSetResponseHeaderMaxSize` has no response header to limit and `sceHttpRedirectCacheFlush` no redirect to forget; `sceHttpsUnloadCert` returns success like `sceHttpsLoadCert`, which keeps no certificate
 
+### Dialog and Audio3D integration
+
+#### Error dialogs
+
+[libSceErrorDialog](../../core/libs/prx/libSceErrorDialog/Export.cpp) keeps a process-wide state under a mutex. These are the current host transitions, not verified console behavior:
+
+| State | Value | Transitions |
+|-------|-------|-------------|
+| None | 0 | Initialize sets Initialized |
+| Initialized | 1 | Open sets Running; Terminate sets None |
+| Running | 2 | UpdateStatus or Close sets Finished; Terminate sets None |
+| Finished | 3 | Open sets Running; Terminate sets None |
+
+GetStatus does not advance the state. Open reads a 16-byte parameter: signed 32-bit size, error code and user id at offsets 0, 4 and 8; the last word is unused. Windows checks commitment, guard/no-access flags and region bounds; Linux checks only for a non-null pointer. [GuestErrorDialog](../../core/libs/tests/GuestErrorDialog.cpp) checks the current lifecycle and argument errors. The parameter layout must not be reused for MsgDialog.
+
+Visible presentation needs a cancellable host request bridge; the [VideoOut loop](../../core/libs/prx/libSceVideoOut/src/VideoOutDriver.cpp) does not provide one. Guest Open and status polling must return without waiting for dismissal. Display must run outside the state mutex; Close and Terminate must cancel it, and completion from an earlier request must not finish a reopened dialog. Presentation before a VideoOut window exists, shutdown and display failure need defined handling.
+
+[SDL2 message boxes](https://wiki.libsdl.org/SDL2/SDL_ShowSimpleMessageBox) block their calling thread until dismissed; SDL recommends the parent window's owning thread, or the main thread without a parent. Calling one directly from Open or UpdateStatus does not supply cancellation. Verification must cover dismissal, close before/during display, reopen, termination and display failure; visible text needs a separate host smoke test.
+
+#### Audio3D playback
+
+[libSceAudio3d](../../core/libs/prx/libSceAudio3d/Export.cpp) supports one timing port, id 0. Advance reserves entries; Push moves them into timed slots of `granularity / 48000` seconds. Synchronous Push waits only when the queue is full, until its oldest slot completes. GetQueueLevel removes elapsed slots, and Close clears the port. This pacing supplies no samples and produces no sound.
+
+Bed/object submission signatures, sample formats, channel layouts and attribute meanings remain unverified. Object reservation alone does not provide playback. Host output should first reuse [AudioOut](../../core/libs/prx/libSceAudioOut); submitted samples, queue capacity, close during synchronous playback and unsupported input need verification. Timing tests alone cannot establish correct sound or console ABI compatibility.
+
 ### Unknown function info
 
 - PPSA01341 imports declared without parameters, signatures unknown: [sceAgcSetSemaphoreMemory](../../core/libs/prx/libSceAgc/Unimplemented.cpp), [sceAgcDriverRegisterMultipleResources](../../core/libs/prx/libSceAgcDriver/Unimplemented.cpp). Names from the shadPS4 aerolib NID list
