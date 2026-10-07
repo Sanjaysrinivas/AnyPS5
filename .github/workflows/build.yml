@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main, validation/contributions-20261007]
+    branches: [main, validation/linux-integration]
   pull_request:
   workflow_dispatch:
 
