@@ -35,6 +35,7 @@ All switches are disabled by default. `unused-filter` defaults to `0`; `--rpath`
 
 | Option                        | Effect                                                                                                                                                                                                                                                                                                                  |
 |-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `--help`, `-h`                 | Print option descriptions and examples to stdout and exit successfully without converting or launching an executable.                                                                                                                                                                                                  |
 | `--windows`                   | Produce a Windows PE executable.                                                                                                                                                                                                                                                                                        |
 | `--windows-diagnostics`       | Include startup dependency diagnostics. Requires `--windows`.                                                                                                                                                                                                                                                           |
 | `--windows-gui`               | Select the Windows GUI subsystem instead of the console subsystem. Requires `--windows`.                                                                                                                                                                                                                                |
@@ -50,7 +51,7 @@ All switches are disabled by default. `unused-filter` defaults to `0`; `--rpath`
 | `--skip-syscall-check`        | Deprecated. Disable syscall scanning in the executable and bundled modules.                                                                                                                                                                                                                                             |
 | `--lazy-binding`              | Deprecated. Enable lazy symbol binding instead of eager binding. Incompatible with bundled ELF modules.                                                                                                                                                                                                                 |
 
-Specify `unused-filter=0|1|2` without `--`, at most once. Unknown options and extra positional arguments are errors. There is no `--help` flag; invoking `relinker` without arguments prints the usage syntax and exits with an error.
+Specify `unused-filter=0|1|2` without `--`, at most once. Unknown options and extra positional arguments are errors, including with `--help`. Invoking `relinker` without arguments prints usage to stderr and exits with an argument error. [CLI behavior and tests](../dev/CLI.md).
 
 The `--skip-sce-module`, `--exclude-sce-module <file>`, `--skip-syscall-check`, and `--lazy-binding` flags are deprecated. If the application runs with these flags enabled, it will be extremely unstable and unsuitable for general use. These flags are only for debugging.
 
@@ -95,4 +96,4 @@ The game runs on the first Vulkan 1.1 device with graphics and compute queues an
 
 ## Exit codes
 
-`0`: conversion succeeded. `1`: invalid arguments. `2`: conversion failed; the error is printed to stderr. With `--autorun`, successful conversion returns the launched application's exit code.
+`0`: conversion succeeded or help was printed. `1`: invalid arguments. `2`: conversion failed; the error is printed to stderr. With `--autorun`, successful conversion returns the launched application's exit code.

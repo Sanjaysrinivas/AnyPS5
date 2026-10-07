@@ -5,13 +5,42 @@
 
 namespace Cli {
 
+const char* HelpText() {
+    return
+        "Usage: relinker [options] <input.elf> <output>\n"
+        "\n"
+        "Options:\n"
+        "  --help, -h               Print this help and exit.\n"
+        "  --windows                Produce a Windows PE executable; default is Linux ELF.\n"
+        "  --windows-diagnostics    Include startup dependency diagnostics; requires --windows.\n"
+        "  --windows-gui            Use the Windows GUI subsystem; requires --windows.\n"
+        "  --to-intel               Convert supported AMD-only instructions.\n"
+        "  unused-filter=0|1|2      Select unused-import analysis; default is 0.\n"
+        "  --registry               Write <output-stem>.registry.json beside the output.\n"
+        "  --rpath <path>           Set the system library search path; default is $ORIGIN/libs.\n"
+        "  --autorun                Run the converted output and wait for Enter.\n"
+        "\n"
+        "Deprecated debugging options:\n"
+        "  --skip-syscall-check      Disable syscall scanning.\n"
+        "  --skip-sce-module         Skip bundled modules.\n"
+        "  --exclude-sce-module <file>  Exclude a bundled module by filename; repeatable.\n"
+        "  --lazy-binding           Use lazy binding; incompatible with bundled modules.\n"
+        "\n"
+        "Examples:\n"
+        "  relinker source/input.elf app.elf\n"
+        "  relinker --windows source/input.elf app.exe\n"
+        "  relinker --rpath '$ORIGIN/libs' source/input.elf app.elf\n";
+}
+
 Args ParseArgs(int argc, char* argv[]) {
     Args args;
     bool unusedFilterSpecified = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-        if (arg == "--skip-syscall-check") {
+        if (arg == "--help" || arg == "-h") {
+            args.showHelp = true;
+        } else if (arg == "--skip-syscall-check") {
             args.skipSyscallCheck = true;
         } else if (arg == "--skip-sce-module") {
             args.skipSceModule = true;
@@ -53,6 +82,8 @@ Args ParseArgs(int argc, char* argv[]) {
             throw std::runtime_error("unexpected argument: " + arg);
         }
     }
+
+    if (args.showHelp) return args;
 
     if (args.skipSceModule && !args.excludedSceModules.empty())
         throw std::runtime_error("--exclude-sce-module conflicts with --skip-sce-module");
