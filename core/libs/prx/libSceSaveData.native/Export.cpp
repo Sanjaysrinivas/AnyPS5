@@ -560,8 +560,8 @@ static int setSaveDataMemory2(const SaveDataMemorySet2* set_param) {
         }
     }
     if (n != 0) {
-        std::fstream f(path, std::ios::binary | std::ios::in | std::ios::out);
-        if (!f) {
+        std::vector<char> memory;
+        if (!read_file_all(path, memory) || memory.size() != size) {
             return SAVE_DATA_ERROR_INTERNAL;
         }
         for (std::uint32_t i = 0; i < n; i++) {
@@ -569,11 +569,9 @@ static int setSaveDataMemory2(const SaveDataMemorySet2* set_param) {
             if (d.buf_size == 0) {
                 continue;
             }
-            f.seekp(static_cast<std::streamoff>(d.offset));
-            f.write(static_cast<const char*>(d.buf), static_cast<std::streamsize>(d.buf_size));
+            std::memcpy(memory.data() + d.offset, d.buf, d.buf_size);
         }
-        f.flush();
-        if (!f) {
+        if (!write_file_replace(path, memory)) {
             return SAVE_DATA_ERROR_INTERNAL;
         }
     }
