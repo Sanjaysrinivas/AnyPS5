@@ -8,6 +8,7 @@
 namespace Cli {
 
 struct Args {
+    bool showHelp = false;
     bool skipSyscallCheck = false;
     bool skipSceModule = false;
     bool toIntel = false;
@@ -25,6 +26,7 @@ struct Args {
 };
 
 Args ParseArgs(int argc, char* argv[]);
+const char* HelpText();
 
 int Autorun(const std::string& absPath, bool toWindows);
 
