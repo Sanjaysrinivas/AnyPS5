@@ -288,6 +288,11 @@ if(BUILD_TESTING)
     add_test(NAME strict_nid_filter COMMAND strict_nid_filter_tests)
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+        add_test_executable(dynamic_table_bounds_tests
+            ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/DynamicTableBoundsTests.cpp
+        )
+        add_test(NAME dynamic_table_bounds COMMAND dynamic_table_bounds_tests $<TARGET_FILE:relinker>)
+
         add_test_executable(to_intel_linux_stubs_tests
             ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/ToIntelLinuxStubsTests.cpp
         )
@@ -297,10 +302,5 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/RelaBoundsTests.cpp
         )
         add_test(NAME rela_bounds COMMAND rela_bounds_tests $<TARGET_FILE:relinker>)
-
-        add_test_executable(dynamic_table_bounds_tests
-            ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/DynamicTableBoundsTests.cpp
-        )
-        add_test(NAME dynamic_table_bounds COMMAND dynamic_table_bounds_tests $<TARGET_FILE:relinker>)
     endif()
 endif()
