@@ -8,6 +8,11 @@
   - libstdc++-6.dll
   - libwinpthread-1.dll
 
+### Relinker input ranges
+
+- [Virtual-to-file translation](../../core/relinker/relinker/src/parsing/ElfReader.cpp) adds a load segment's file offset and address displacement without checking overflow. A non-executable `PT_LOAD` with `p_offset=0xfffffffffffff000`, `p_vaddr=0x2000` and `p_filesz=p_memsz=0x2000` maps `DT_STRTAB=0x3600` to file offset `0x600` after wrap. Windows later rejects the segment; Linux can produce an executable retaining its invalid file range. This requires separate segment validation from the symbol-entry bounds fix in [#1272](https://github.com/boykopovar/AnyPS5/pull/1272).
+- [Linux layout](../../core/relinker/elfpatcher/src/general/ProgramHeaderLayoutBuilder.cpp) computes `p_vaddr + p_memsz` before checking alignment overflow. A non-executable `PT_LOAD` with `p_offset=p_filesz=0`, `p_vaddr=0xfffffffffffff000` and `p_memsz=0x2000` has a wrapped end of `0x1000`; Linux accepts it and can place generated data at that address. Windows rejects it with `PT_LOAD address overflow`. Both reproducers use the optional-PLT fixture with six program-header slots, including the extra load and three discardable headers; no game files are required.
+
 ### Silent stubs
 
 Throughout the project, every function at every stage either **does exactly what it's supposed to or throws an exception**. Everywhere... except:
