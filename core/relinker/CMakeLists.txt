@@ -297,5 +297,10 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/RelaBoundsTests.cpp
         )
         add_test(NAME rela_bounds COMMAND rela_bounds_tests $<TARGET_FILE:relinker>)
+
+        add_test_executable(dynamic_table_bounds_tests
+            ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/DynamicTableBoundsTests.cpp
+        )
+        add_test(NAME dynamic_table_bounds COMMAND dynamic_table_bounds_tests $<TARGET_FILE:relinker>)
     endif()
 endif()
