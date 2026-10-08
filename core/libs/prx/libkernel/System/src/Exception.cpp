@@ -220,8 +220,9 @@ void CALLBACK WaitingEntry(ULONG_PTR parameter) {
 static_assert(HomeArea + 8 == 40, "Aps5RedirectedEntryStub finds the delivery 40 bytes above its stack pointer");
 static_assert(offsetof(Delivery, context) == 16 && offsetof(CONTEXT, Rax) == 0x78 && offsetof(CONTEXT, Rbp) == 0xa0 && offsetof(CONTEXT, R15) == 0xf0, "Aps5RedirectedEntryStub stores the live registers into the delivery's context");
 
-bool Exited(HANDLE native) {
-    return WaitForSingleObject(native, 0) == WAIT_OBJECT_0;
+bool Exited(Pthread thread) {
+    return thread->_finished.load(std::memory_order_acquire) ||
+           WaitForSingleObject(static_cast<HANDLE>(thread->nativeHandle), 0) == WAIT_OBJECT_0;
 }
 
 bool RestoringContext(DWORD64 rip) {
@@ -253,17 +254,22 @@ bool RaiseOn(Pthread thread, GuestExceptionHandler handler, int signum) {
     const auto retryDeadline = std::chrono::steady_clock::now() + RetryLimit;
     for (;;) {
         if (SuspendThread(native) == static_cast<DWORD>(-1)) {
-            if (Exited(native)) return false;
+            if (Exited(thread)) return false;
             throw std::runtime_error("sceKernelRaiseException: cannot suspend the target thread");
         }
-        if (Exited(native)) {
+        if (Exited(thread)) {
             ResumeThread(native);
             return false;
         }
         delivery.context.ContextFlags = CONTEXT_FULL | CONTEXT_SEGMENTS;
         if (!GetThreadContext(native, &delivery.context)) {
             ResumeThread(native);
+            if (Exited(thread)) return false;
             throw std::runtime_error("sceKernelRaiseException: cannot read the target thread context");
+        }
+        if (thread->_finished.load(std::memory_order_acquire)) {
+            ResumeThread(native);
+            return false;
         }
         if (thread->waitCount.load(std::memory_order_seq_cst) > 0) {
             const bool accepted = QueueUserAPC(WaitingEntry, native, reinterpret_cast<ULONG_PTR>(queued.get())) != 0;
