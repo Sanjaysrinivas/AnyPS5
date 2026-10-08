@@ -8,6 +8,9 @@
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 extern "C" {
 int APS5_VABI sceKernelInstallExceptionHandler(int signum, void* handler);
@@ -49,7 +52,6 @@ static std::atomic<bool> patchContext{false};
 static std::atomic<std::uint64_t> observedR13{0};
 static std::atomic<std::uint64_t> observedXmm8{0};
 static std::atomic<std::uint32_t> observedMxcsr{0};
-static std::atomic<bool> recordSelf{false};
 static std::atomic<Pthread> handlerSelf{nullptr};
 
 static void APS5_VABI Handler(int signum, void* context) {
@@ -71,11 +73,11 @@ static void APS5_VABI Handler(int signum, void* context) {
         std::memcpy(bytes + Xmm8Offset, &PatchedXmm8, sizeof(PatchedXmm8));
         std::memcpy(bytes + MxcsrOffset, &mxcsr, sizeof(mxcsr));
     }
-    if (recordSelf.load()) handlerSelf.store(scePthreadSelf());
     int local = 0;
     handlerFrame.store(reinterpret_cast<std::uintptr_t>(&local));
     handlerRsp.store(rsp);
     handlerThread.store(std::this_thread::get_id());
+    handlerSelf.store(scePthreadSelf());
     calls.fetch_add(1);
 }
 
@@ -186,6 +188,59 @@ static void* APS5_VABI Starting(void*) {
     while (!startingRelease.load()) std::this_thread::yield();
     return nullptr;
 }
+
+#ifdef _WIN32
+static constexpr DWORD ContinuedCode = 0xe0000001u;
+static constexpr int ContinuingRounds = 50;
+static std::atomic<int> continued{0};
+
+static LONG CALLBACK ContinueRaised(EXCEPTION_POINTERS* info) {
+    if (info->ExceptionRecord->ExceptionCode != ContinuedCode) return EXCEPTION_CONTINUE_SEARCH;
+    continued.fetch_add(1);
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+static constexpr int SelfingRounds = 100;
+static std::atomic<Pthread> selfSink{nullptr};
+
+static void* APS5_VABI Selfing(void* arg) {
+    auto& worker = *static_cast<Worker*>(arg);
+    worker.id = std::this_thread::get_id();
+    worker.started.store(true);
+    while (!worker.stop.load()) selfSink.store(scePthreadSelf());
+    return nullptr;
+}
+
+static void* APS5_VABI Continuing(void* arg) {
+    auto& worker = *static_cast<Worker*>(arg);
+    worker.id = std::this_thread::get_id();
+    worker.started.store(true);
+    while (!worker.stop.load()) RaiseException(ContinuedCode, 0, 0, nullptr);
+    return nullptr;
+}
+
+using NtContinueFunction = LONG(NTAPI*)(CONTEXT*, BOOLEAN);
+alignas(16) static CONTEXT loopContext;
+alignas(16) static CONTEXT leaveContext;
+static std::atomic<DWORD> loopingId{0};
+
+static void* APS5_VABI Looping(void* arg) {
+    auto& worker = *static_cast<Worker*>(arg);
+    const auto ntContinue = reinterpret_cast<NtContinueFunction>(reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtContinue")));
+    volatile bool left = false;
+    RtlCaptureContext(&leaveContext);
+    if (left) return nullptr;
+    left = true;
+    loopContext = leaveContext;
+    loopContext.Rip = reinterpret_cast<DWORD64>(ntContinue);
+    loopContext.Rcx = reinterpret_cast<DWORD64>(&loopContext);
+    loopContext.Rdx = 0;
+    loopingId.store(GetCurrentThreadId());
+    worker.started.store(true);
+    ntContinue(&loopContext, FALSE);
+    return nullptr;
+}
+#endif
 
 static std::atomic<bool> finishedReturned{false};
 
@@ -377,7 +432,6 @@ int main() {
     Require(spin.r12 == PatchedR12 && spin.xmm8 == PatchedXmm8);
     Require(spin.mxcsr == (observedMxcsr.load() | FlushToZero));
 
-    recordSelf.store(true);
     for (int round = 0; round < StartingRounds; ++round) {
         const int before = calls.load();
         startingRelease.store(false);
@@ -390,7 +444,62 @@ int main() {
         startingRelease.store(true);
         Require(scePthreadJoin(startingThread, nullptr) == 0);
     }
-    recordSelf.store(false);
+
+#ifdef _WIN32
+    const int beforeContinuing = calls.load();
+    void* const vectored = AddVectoredExceptionHandler(1, ContinueRaised);
+    Require(vectored != nullptr);
+    Worker continuing;
+    Pthread continuingThread = nullptr;
+    Require(scePthreadCreate(&continuingThread, nullptr, Continuing, &continuing, "continuing") == 0);
+    while (!continuing.started.load() || continued.load() == 0) std::this_thread::yield();
+    for (int raised = 0; raised < ContinuingRounds; ++raised) {
+        Require(sceKernelRaiseException(continuingThread, SIGUSR1) == 0);
+        ExpectDelivery(beforeContinuing + raised, continuing.id);
+    }
+    continuing.stop.store(true);
+    Require(scePthreadJoin(continuingThread, nullptr) == 0);
+    Require(RemoveVectoredExceptionHandler(vectored) != 0);
+
+    Worker selfing;
+    Pthread selfingThread = nullptr;
+    Require(scePthreadCreate(&selfingThread, nullptr, Selfing, &selfing, "selfing") == 0);
+    while (!selfing.started.load()) std::this_thread::yield();
+    for (int raised = 0; raised < SelfingRounds; ++raised) {
+        Require(sceKernelRaiseException(selfingThread, SIGUSR1) == 0);
+        ExpectDelivery(beforeContinuing + ContinuingRounds + raised, selfing.id);
+        Require(handlerSelf.load() == selfingThread);
+    }
+    selfing.stop.store(true);
+    Require(scePthreadJoin(selfingThread, nullptr) == 0);
+
+    Worker looping;
+    Pthread loopingThread = nullptr;
+    Require(scePthreadCreate(&loopingThread, nullptr, Looping, &looping, "looping") == 0);
+    while (!looping.started.load()) std::this_thread::yield();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const int beforeLooping = calls.load();
+    const auto raisedAt = std::chrono::steady_clock::now();
+    bool refused = false;
+    try {
+        sceKernelRaiseException(loopingThread, SIGUSR1);
+    } catch (const std::runtime_error&) {
+        refused = true;
+    }
+    const auto retried = std::chrono::steady_clock::now() - raisedAt;
+    Require(refused && retried >= std::chrono::milliseconds(900) && retried < std::chrono::seconds(10));
+    Require(calls.load() == beforeLooping);
+    const HANDLE loopingHandle = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, loopingId.load());
+    Require(loopingHandle != nullptr);
+    Require(SuspendThread(loopingHandle) != static_cast<DWORD>(-1));
+    CONTEXT stopped{};
+    stopped.ContextFlags = CONTEXT_CONTROL;
+    Require(GetThreadContext(loopingHandle, &stopped) != 0);
+    loopContext = leaveContext;
+    Require(ResumeThread(loopingHandle) != static_cast<DWORD>(-1));
+    CloseHandle(loopingHandle);
+    Require(scePthreadJoin(loopingThread, nullptr) == 0);
+#endif
 
     Pthread finishedThread = nullptr;
     Require(scePthreadCreate(&finishedThread, nullptr, Finished, nullptr, "finished") == 0);
