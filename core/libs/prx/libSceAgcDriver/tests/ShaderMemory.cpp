@@ -1102,7 +1102,7 @@ void verifyPixelInputs() {
     }
 }
 
-ShaderRecompiler::RecompileResult recompileSlots(std::initializer_list<std::uint32_t> controls, std::span<const std::uint32_t> code) {
+ShaderRecompiler::RecompileResult recompileSlots(std::initializer_list<std::uint32_t> controls, std::span<const std::uint32_t> code, bool float64 = true, bool barycentric = true) {
     using namespace ShaderRecompiler;
     ShaderPixelStageInfo pixel{};
     pixel.interpolatorCount = static_cast<std::uint32_t>(controls.size());
@@ -1119,9 +1119,9 @@ ShaderRecompiler::RecompileResult recompileSlots(std::initializer_list<std::uint
     request.target.vulkanVersion = 0x00401000u;
     request.target.spirvVersion = 0x00010300u;
     request.target.subgroupSize = 64;
-    request.target.fragmentShaderBarycentricEnabled = true;
+    request.target.fragmentShaderBarycentricEnabled = barycentric;
     static constexpr std::array<std::uint32_t, 1> capabilities{spv::CapabilityFloat64};
-    request.target.supportedCapabilities = capabilities;
+    request.target.supportedCapabilities = std::span(capabilities).first(float64 ? 1u : 0u);
     request.layout.pushConstantSizeBytes = 128;
     request.useCache = false;
     return Recompile(request);
@@ -1172,6 +1172,17 @@ void verifyPixelParameterSlots() {
     require(inputs.size() == 1u && inputs[0].first == 3u && inputs[0].second && subtracts({0x403u}) == 2u, "v_interp_mov p10/p20 of a flat input did not read differences to vertex 0");
     require(slotInputs({0x23u}, vertices).empty(), "a defaulted input (OFFSET bit 5 without FLAT_SHADE) was declared as a parameter");
     expectFailure([] { static_cast<void>(recompileSlots({0x423u, 0x3u}, shared)); }, "passes its vertices through unchanged", "an interpolated pass-through input was accepted");
+}
+
+void verifyF16InterpolationCapabilities() {
+    static constexpr std::array<std::uint32_t, 5> p1ll{0xd7420002u, 0x00020000u, 0xf800180fu, 0x02020202u, 0xbf810000u};
+    static constexpr std::array<std::uint32_t, 7> p1lv{0x7e0e02ffu, 0x4500bc00u, 0xd7430008u, 0x041e0000u, 0xf800180fu, 0x08080808u, 0xbf810000u};
+    static constexpr std::array<std::uint32_t, 6> p2{0x7e040280u, 0xd75a0003u, 0x040a0200u, 0xf800180fu, 0x03030303u, 0xbf810000u};
+    for (const auto code : {std::span<const std::uint32_t>(p1ll), std::span<const std::uint32_t>(p1lv), std::span<const std::uint32_t>(p2)}) {
+        require(!recompileSlots({0x03080000u}, code).spirv.empty(), "16-bit interpolation did not compile with its required capabilities");
+        expectFailure([&] { static_cast<void>(recompileSlots({0x03080000u}, code, false)); }, "Float64 capability", "16-bit interpolation compiled without Float64");
+        expectFailure([&] { static_cast<void>(recompileSlots({0x03080000u}, code, true, false)); }, "requires fragmentShaderBarycentric", "16-bit interpolation compiled without barycentrics");
+    }
 }
 
 void verifyF16PixelParameterSlots() {
@@ -1785,6 +1796,7 @@ int main(int argc, char** argv) {
         verifyPixelExportReplay();
         verifyPixelParameterSlots();
         verifyF16PixelParameterSlots();
+        verifyF16InterpolationCapabilities();
         verifyComputedTexelOffsets();
         verifyShaderClockScopes();
         verifyUnnormalizedSamplers();
