@@ -46,7 +46,6 @@ jobs:
               - '!docs/**'
 
   relinker:
-    name: Relinker (${{ matrix.os }})
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.relinker == 'true') }}
     runs-on: ${{ matrix.os }}
