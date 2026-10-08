@@ -871,7 +871,69 @@ void EmitQueryLodOp(SpirvValueEmitContext& ctx, const ImageEmitAccess& access) {
     ctx.Define(access.inst, TableResult(ctx, access, result));
 }
 
+void EmitByReadOp(SpirvValueEmitContext& ctx, const ImageEmitAccess& access) {
+    auto& state = ctx.state;
+    const auto elements = access.mem.imageByElements;
+    const auto components = access.mem.dataDwords / elements;
+    if (access.image.dimension != RdnaImageDimension::Dim2D || components == 0u || components * elements != access.mem.dataDwords || access.mem.dataBits != 32u) {
+        ctx.Fail(access.inst, "is a MIMG BY2/BY4 load outside the measured 2D, 32-bit data subset");
+    }
+    state.module.EmitCapability(spv::CapabilityImageQuery);
+    const auto condition = ctx.Arg(access.inst, 2);
+    ctx.Define(access.inst, EmitValueOrDefaultIfCondition(state, condition, TypeU32Vector(state, 4), ConstantU32CompositeZero(state, 4), [&]() {
+        const auto image = LoadSampledImageDescriptor(state, access.mem.resource, access.slot);
+        const auto x = AddressU32(ctx, access, 0);
+        const auto y = AddressU32(ctx, access, 1);
+        const auto lod = LodU32(ctx, access);
+        const auto levels = state.module.AllocateId();
+        state.module.AddFunction(spv::OpImageQueryLevels, TypeU32(state), levels, image);
+        const auto lodInside = Binary(state, spv::OpULessThan, TypeBool(state), lod, levels);
+        const auto queryLod = Select(state, TypeU32(state), lodInside, lod, ConstantU32(state, 0));
+        const auto size = state.module.AllocateId();
+        state.module.AddFunction(spv::OpImageQuerySizeLod, ImageViewSizeType(state, access.image.dimension), size, image, ConstantU32(state, 0));
+        const auto levelExtent = [&](std::uint32_t axis) {
+            const auto base = state.module.AllocateId();
+            state.module.AddFunction(spv::OpCompositeExtract, TypeU32(state), base, size, axis);
+            const auto shifted = Binary(state, spv::OpShiftRightLogical, TypeU32(state), base, queryLod);
+            return Select(state, TypeU32(state), Binary(state, spv::OpUGreaterThan, TypeBool(state), shifted, ConstantU32(state, 1)), shifted, ConstantU32(state, 1));
+        };
+        const auto width = levelExtent(0u);
+        const auto height = levelExtent(1u);
+        auto inside = Binary(state, spv::OpLogicalAnd, TypeBool(state), lodInside, Binary(state, spv::OpULessThan, TypeBool(state), x, width));
+        inside = Binary(state, spv::OpLogicalAnd, TypeBool(state), inside, Binary(state, spv::OpUGreaterThanEqual, TypeBool(state), Binary(state, spv::OpISub, TypeU32(state), width, x), ConstantU32(state, elements)));
+        inside = Binary(state, spv::OpLogicalAnd, TypeBool(state), inside, Binary(state, spv::OpULessThan, TypeBool(state), y, height));
+        const auto first = Select(state, TypeU32(state), inside, Binary(state, spv::OpBitwiseAnd, TypeU32(state), x, ConstantU32(state, ~(elements - 1u))), ConstantU32(state, 0));
+        const auto row = Select(state, TypeU32(state), inside, y, ConstantU32(state, 0));
+        MemoryInfo texelMemory = access.mem;
+        texelMemory.dmask = (1u << components) - 1u;
+        texelMemory.dataDwords = components;
+        texelMemory.componentCount = components;
+        const ImageEmitAccess texelAccess{access.inst, texelMemory, access.image, access.address, access.table, access.slot};
+        std::uint32_t words[4] = {ConstantU32(state, 0), ConstantU32(state, 0), ConstantU32(state, 0), ConstantU32(state, 0)};
+        for (std::uint32_t element = 0; element < elements; ++element) {
+            const auto column = Binary(state, spv::OpIAdd, TypeU32(state), first, ConstantU32(state, element));
+            const auto coord = state.module.AllocateId();
+            state.module.AddFunction(spv::OpCompositeConstruct, TypeU32Vector(state, 2), coord, column, row);
+            const auto color = state.module.AllocateId();
+            state.module.AddFunction(spv::OpImageFetch, ImageVectorType(state, access.image.numericClass, 4), color, image, coord, spv::ImageOperandsLodMask, queryLod);
+            const auto texel = ResultVector(ctx, texelAccess, UnpackImageTexel(ctx, texelAccess, color), access.image.numericClass, false, false);
+            for (std::uint32_t component = 0; component < components; ++component) {
+                const auto value = state.module.AllocateId();
+                state.module.AddFunction(spv::OpCompositeExtract, TypeU32(state), value, texel, component);
+                words[element * components + component] = Select(state, TypeU32(state), inside, value, ConstantU32(state, 0));
+            }
+        }
+        const auto result = state.module.AllocateId();
+        state.module.AddFunction(spv::OpCompositeConstruct, TypeU32Vector(state, 4), result, words[0], words[1], words[2], words[3]);
+        return TableResult(ctx, access, result);
+    }));
+}
+
 void EmitReadOp(SpirvValueEmitContext& ctx, const ImageEmitAccess& access) {
+    if (access.mem.imageByElements != 0u) {
+        EmitByReadOp(ctx, access);
+        return;
+    }
     auto& state = ctx.state;
     const auto& dimensionInfo = RdnaImageDimensionInfoFor(access.image.dimension);
     const auto numericClass = access.image.numericClass;

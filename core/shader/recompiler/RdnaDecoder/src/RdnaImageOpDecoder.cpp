@@ -134,6 +134,14 @@ constexpr ImageOpcodeInfo imageOpcodes[] = {
     {0x0au, RdnaOpcode::ImageStorePck, nullptr, 0, false, false, false},
     {0x0bu, RdnaOpcode::ImageStoreMipPck, nullptr, 0, false, false, false},
     {0x0eu, RdnaOpcode::ImageGetResinfo, nullptr, 0, false, false, false},
+    {0x42u, RdnaOpcode::ImageLoadBy2, nullptr, 0, false, false, false},
+    {0x43u, RdnaOpcode::ImageLoadBy4, nullptr, 0, false, false, false},
+    {0x4au, RdnaOpcode::ImageLoadMipBy2, nullptr, 0, false, false, false},
+    {0x4bu, RdnaOpcode::ImageLoadMipBy4, nullptr, 0, false, false, false},
+    {0x52u, RdnaOpcode::ImageStoreBy2, nullptr, 0, false, false, false},
+    {0x53u, RdnaOpcode::ImageStoreBy4, nullptr, 0, false, false, false},
+    {0x5au, RdnaOpcode::ImageStoreMipBy2, nullptr, 0, false, false, false},
+    {0x5bu, RdnaOpcode::ImageStoreMipBy4, nullptr, 0, false, false, false},
     {0x80u, RdnaOpcode::ImageMsaaLoad, nullptr, 0, false, false, false},
     {0x60u, RdnaOpcode::ImageGetLod, nullptr, 0, false, false, false},
     {0xe6u, RdnaOpcode::ImageBvhIntersectRay, "image_bvh_intersect_ray", 0, false, false, false},
@@ -350,6 +358,10 @@ RdnaInstruction DecodeRdnaMimg(std::uint32_t programCounter, std::span<const std
     validateFlags(flags);
     const auto dmask = (word0 >> 8u) & 15u;
     const bool pckGather = opcode == 0x62u || opcode == 0x63u;
+    const bool by = opcode == 0x42u || opcode == 0x43u || opcode == 0x4au || opcode == 0x4bu || opcode == 0x52u || opcode == 0x53u || opcode == 0x5au || opcode == 0x5bu;
+    if (by && ((dmask != 15u && (dmask != 3u || (opcode & 1u) != 0u)) || a16 || d16 || dimension != RdnaImageDimension::Dim2D || (word0 & 0x8000u) != 0u)) {
+        throw std::runtime_error("MIMG BY2/BY4 requires a data mask that covers every element (BY2 0x3 or 0xf, BY4 0xf), 32-bit addresses and data, a 2D image and a full descriptor");
+    }
     const bool compareSwap = info.opcode == RdnaOpcode::ImageAtomicCmpswap || info.opcode == RdnaOpcode::ImageAtomicFcmpswap;
     const bool floatAtomic = info.opcode == RdnaOpcode::ImageAtomicFcmpswap || info.opcode == RdnaOpcode::ImageAtomicFmin || info.opcode == RdnaOpcode::ImageAtomicFmax;
     const bool atomic64 = info.atomic && !floatAtomic && !d16 && dmask == (compareSwap ? 15u : 3u);
@@ -362,7 +374,7 @@ RdnaInstruction DecodeRdnaMimg(std::uint32_t programCounter, std::span<const std
     const bool rayQuery64 = info.opcode == RdnaOpcode::ImageBvh64IntersectRay;
     const bool rayQuery = rayQuery64 || info.opcode == RdnaOpcode::ImageBvhIntersectRay;
     std::uint32_t components = rayQuery ? (a16 ? 8u : 11u) + (rayQuery64 ? 1u : 0u) : opcode == 0x0Eu ? 1u : coordinateCount(dimension);
-    if (opcode == 1u || opcode == 4u || opcode == 5u || opcode == 9u || opcode == 0x0bu) {
+    if (opcode == 1u || opcode == 4u || opcode == 5u || opcode == 9u || opcode == 0x0bu || (by && (opcode & 8u) != 0u)) {
         ++components;
     }
     if (info.sample || info.gather) {

@@ -103,6 +103,7 @@ private:
     bool imageGetResinfo(const RdnaInstruction& inst);
     bool imageGetLod(const RdnaInstruction& inst);
     bool imageLoad(const RdnaInstruction& inst);
+    bool imageBy(const RdnaInstruction& inst);
     bool imageMsaaLoad(const RdnaInstruction& inst);
     bool imageStore(const RdnaInstruction& inst);
     bool imageSample(const RdnaInstruction& inst);

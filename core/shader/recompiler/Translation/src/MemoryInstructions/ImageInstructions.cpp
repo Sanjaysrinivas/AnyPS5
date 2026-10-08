@@ -138,6 +138,21 @@ bool TranslationContext::imageGetLod(const RdnaInstruction& inst) {
     return true;
 }
 
+bool TranslationContext::imageBy(const RdnaInstruction& inst) {
+    if ((inst.imageOpcodeId & 0x10u) != 0u) {
+        throw std::runtime_error("MIMG BY2/BY4 stores are not implemented");
+    }
+    MemoryInfo memory = imageMemoryInfoFromInstruction(inst);
+    memory.imageHasMip = (inst.imageOpcodeId & 8u) != 0u;
+    memory.imageByElements = (inst.imageOpcodeId & 1u) != 0u ? 4u : 2u;
+    IrValue* resource = getImageResource(memory);
+    IrValue* address = makeImageAddress(inst, inst.source0);
+    IrValue& exec = ir.GetExec();
+    IrValue& result = ir.Emit(IrOpcode::ImageRead, IrOpcodeType(IrOpcode::ImageRead), {resource, address, &exec}, addMemoryInfo(memory, inst.programCounter));
+    writeImageComponents(inst.destination, &result, memory, 4u);
+    return true;
+}
+
 bool TranslationContext::imageLoad(const RdnaInstruction& inst) {
     const MemoryInfo memory = imageMemoryInfoFromInstruction(inst);
     IrValue* resource = getImageResource(memory);

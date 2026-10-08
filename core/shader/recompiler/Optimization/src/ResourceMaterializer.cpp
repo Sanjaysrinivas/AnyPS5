@@ -169,6 +169,15 @@ DecodedImage decodeImageDescriptor(const DescriptorValue& descriptor, const Imag
         }
         decoded.packedFormat = format;
     }
+    if (base.byElements != 0u) {
+        const bool eightBit = format == IrBufferFormat::Format8UNorm || format == IrBufferFormat::Format8SNorm || format == IrBufferFormat::Format8UInt || format == IrBufferFormat::Format8SInt;
+        const bool sixteenBit = format == IrBufferFormat::Format16UNorm || format == IrBufferFormat::Format16SNorm || format == IrBufferFormat::Format16UInt || format == IrBufferFormat::Format16SInt || format == IrBufferFormat::Format16Float;
+        const bool eightBitPair = format == IrBufferFormat::Format8_8UNorm || format == IrBufferFormat::Format8_8SNorm || format == IrBufferFormat::Format8_8UInt || format == IrBufferFormat::Format8_8SInt;
+        const bool measured = base.byElements == 4u ? base.byComponents == 1u && eightBit : base.byElements == 2u && (base.byComponents == 1u ? eightBit || sixteenBit : base.byComponents == 2u && eightBitPair);
+        if (!measured || descriptorImageSwizzle(descriptor) != ShaderImageIdentitySwizzle || rawImageType(descriptor) != ImageType::Color2D || base.indirectRoot != ImageResource::NoIndirectImage) {
+            throw std::runtime_error("MIMG BY2/BY4 requires a direct, identity-swizzled 2D image whose elements fill one dword: R8, R16 or RG8 for BY2, R8 for BY4");
+        }
+    }
     decoded.conversionFormat = RemapTextureFormat(format) != format ? format : IrBufferFormat::Invalid;
     if (format == IrBufferFormat::Format11_11_10UNorm || format == IrBufferFormat::Format10_11_11Float) {
         const bool floating = format == IrBufferFormat::Format10_11_11Float;
@@ -311,8 +320,8 @@ void resolveTableImage(const IrResourcePlan& plan, std::uint32_t imageIndex, con
     if (image.resourceClass != ImageResourceClass::Sampled) {
         rejectTable(BindlessRejection::Storage, "bindless storage image tables are unsupported");
     }
-    if (image.packed) {
-        throw std::runtime_error("bindless packed image tables are unsupported");
+    if (image.packed || image.byElements != 0u) {
+        throw std::runtime_error("bindless packed and BY2/BY4 image tables are unsupported");
     }
     const auto slots = ResourceMaterializer::BindlessSlots();
     DescriptorValue heapValue;
@@ -597,7 +606,7 @@ std::vector<ImageResource> ResourceMaterializer::RuntimeImageModes(const ImageRe
         mode.shaderSwizzle = ShaderImageIdentitySwizzle;
         if (conversion == IrBufferFormat::Format11_11_10UNorm || conversion == IrBufferFormat::Format10_11_11Float) mode.shaderSwizzle = 0x2acu;
         modes.push_back(mode);
-        if (image.dimension == RdnaImageDimension::Dim2D && image.fmaskCompatible && !depth && packed == IrBufferFormat::Invalid) {
+        if (image.dimension == RdnaImageDimension::Dim2D && image.fmaskCompatible && !depth && packed == IrBufferFormat::Invalid && image.byElements == 0u) {
             auto volume = mode;
             volume.dimension = RdnaImageDimension::Dim3D;
             modes.push_back(volume);
