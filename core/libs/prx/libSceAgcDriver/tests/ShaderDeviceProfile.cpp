@@ -141,6 +141,13 @@ void CheckHeaps() {
     Reject([&] { allocate(image, RuntimeAbi::SampledHeapCapacity + 1u); }, "heap capacity exceeded");
     Reject([&] { allocate(image, 1u, RuntimeAbi::SamplerHeapCapacity + 1u); }, "metadata capacity");
     image.resourceClass = ImageResourceClass::Storage;
+    const auto directStorage = image;
+    for (const auto count : {8u, 5u, 16u}) {
+        const auto direct = allocate(image, count);
+        const auto& resources = BindingAllocator{}.FindBinding(direct.layout, DescriptorBindingForImage(image)).resources;
+        Require(resources.size() == count && resources.front() == 0u && resources.back() == count - 1u, "direct storage images did not retain their heap elements");
+    }
+    Reject([&] { allocate(image, 17u); }, "heap capacity exceeded");
     image.mipMode = ImageMipMode::DynamicStorage;
     image.mipCount = RuntimeAbi::StorageMipSlots;
     const auto storage = allocate(image, 1u);
@@ -151,6 +158,19 @@ void CheckHeaps() {
     const auto filled = allocate(image, capacity);
     Require(BindingAllocator{}.FindBinding(filled.layout, DescriptorBindingForImage(image)).resources.size() == RuntimeAbi::StorageHeapCapacity, "a full storage heap was not allocated");
     Reject([&] { allocate(image, capacity + 1u); }, "heap capacity exceeded");
+    const auto allocateMixed = [&](std::uint32_t directCount) {
+        IrProgram program;
+        program.Metadata().shaderInfoComplete = true;
+        program.Resources().info.images.assign(directCount, directStorage);
+        program.Resources().info.images.insert(program.Resources().info.images.begin(), image);
+        return BindingAllocator{}.Allocate(program, {0u, 0u, 0u, 128u});
+    };
+    for (const auto directCount : {1u, 12u}) {
+        const auto mixed = allocateMixed(directCount);
+        const auto& resources = BindingAllocator{}.FindBinding(mixed.layout, DescriptorBindingForImage(image)).resources;
+        Require(resources.size() == 4u + directCount && std::ranges::count(resources, 0u) == 4u && resources.back() == directCount, "mixed storage images did not share the heap with four mip slots");
+    }
+    Reject([&] { allocateMixed(13u); }, "heap capacity exceeded");
     Reject([&] { allocate(image, 0u, RuntimeAbi::SamplerHeapCapacity / 2u + 1u); }, "sampler pairs");
     const std::array dimensions{RdnaImageDimension::Dim1D, RdnaImageDimension::Dim1DArray, RdnaImageDimension::Dim2D, RdnaImageDimension::Dim2DArray, RdnaImageDimension::Dim3D, RdnaImageDimension::Dim2DMsaa, RdnaImageDimension::Dim2DMsaaArray};
     std::set<std::uint32_t> classes;
