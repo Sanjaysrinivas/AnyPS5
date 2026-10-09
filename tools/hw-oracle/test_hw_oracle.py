@@ -129,6 +129,9 @@ class AssemblyTests(unittest.TestCase):
                 hw_oracle.tool(name)
             except SystemExit as error:
                 self.skipTest(str(error))
+        targets = subprocess.run([hw_oracle.tool("clang"), "--print-targets"], capture_output=True, text=True, check=True).stdout
+        if not any(line.split()[:1] == ["amdgcn"] for line in targets.splitlines()):
+            self.skipTest("clang was built without the AMDGPU target")
         for wave64, vcc, sgpr in ((False, "vcc_lo", "s8"), (True, "vcc", "s[8:9]")):
             body = (f"  v_cmp_lt_f32 {vcc}, v4, v5\n"
                     f"  v_cndmask_b32 v10, v6, v7, {vcc}\n"
