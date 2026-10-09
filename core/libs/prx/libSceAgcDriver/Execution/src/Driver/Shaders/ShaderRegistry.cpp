@@ -365,6 +365,7 @@ std::vector<PreparedShaders::Entry> PrepareRegistered(const ShaderSnapshot& snap
     }
     std::vector<std::uint32_t> userData(userCount);
     if (stage != Stage::Compute && stage != Stage::Fragment && snapshot.type != 6) vertex = Graphics::DecodeVertexStageInfo(snapshot.header, snapshot.headerAddress, userData, nullptr, true);
+    if (vertex) vertex->paClVsOutCntl = RegisterValue(state.context, 0x207) & (0xffffu | (1u << 21u) | (1u << 22u) | (1u << 23u));
     const ShaderRecompiler::SwappcInfo swappc{vertex.has_value(), firstUser, userCount};
     auto graph = ShaderRecompiler::GraphBuilder{}.Build(decoded, &swappc);
     ShaderRecompiler::Structurizer{}.Structurize(graph);
@@ -421,6 +422,7 @@ std::vector<PreparedGraphicsStage> PrepareGraphicsStages(const DrawDecode& decod
         const auto wave = fragment ? decoded.state.stages.fragmentWaveSize : decoded.state.stages.vertexWaveSize;
         std::optional<ShaderRecompiler::ShaderVertexStageInfo> vertex;
         if (!fragment) vertex = Graphics::DecodeVertexStageInfo(program.binary.header, program.binary.headerAddress, program.userData, nullptr, true);
+        if (vertex) vertex->paClVsOutCntl = decoded.state.paClVsOutCntl & (0xffffu | (1u << 21u) | (1u << 22u) | (1u << 23u));
         ShaderRecompiler::RecompileRequest request{program.binary, {wave, program.firstUserSgpr, program.userData, {}, fragment ? std::optional(decoded.pixel) : std::nullopt, vertex, memory, RegisteredFloatMode(*program.snapshot)}, target, {0, 0, pushOffset, capacity - pushOffset}, ShaderRecompiler::GraphicsCompileContext{program.firstUserSgpr, linked, decoded.state.stages.mesh, decoded.state.stages.tessellation, {}}};
         std::vector<std::uint64_t> key;
         ShaderRecompiler::BuildPreparedShaderKey(request, key);
@@ -489,6 +491,7 @@ void Driver::ResolveGraphicsStagesAbi(std::span<const Shader* const> stages, std
         return;
     }
     DrawDecode decoded{};
+    decoded.state.paClVsOutCntl = RegisterValue(state.context, 0x207);
     decoded.state.stages = Graphics::DecodeShaderStages(state);
     DecodeGraphicsPrograms(decoded, state, *registry, true, false);
     auto prepared = PrepareGraphicsStages(decoded, localDevice->Target());

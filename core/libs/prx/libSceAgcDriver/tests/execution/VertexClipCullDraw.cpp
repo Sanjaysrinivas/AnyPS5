@@ -98,6 +98,9 @@ const std::array<Step, 4> Steps{{
 struct RegisteredShader {
     Shader shader;
     ShaderUserData userData;
+    std::array<ShaderRegister, 4> registers;
+    std::array<ShaderRegister, 2> context;
+    ShaderSpecialRegs specials;
 };
 RegisteredShader VertexShader{};
 RegisteredShader PixelShader{};
@@ -125,6 +128,19 @@ void Register(RegisteredShader& registered, const void* code, std::uint32_t byte
     registered.shader.header_size = sizeof(RegisteredShader);
     registered.shader.shader_size = bytes;
     registered.shader.type = type;
+    const auto address = reinterpret_cast<std::uintptr_t>(code);
+    const bool vertex = type == 2;
+    registered.registers = {{{vertex ? 0xc8u : 0x8u, static_cast<std::uint32_t>(address >> 8u)},
+        {vertex ? 0xc9u : 0x9u, static_cast<std::uint32_t>(address >> 40u)},
+        {vertex ? 0x8au : 0xau, 0}, {vertex ? 0x8bu : 0xbu, vertex ? 4u << 1u : 0u}}};
+    registered.context = vertex ? std::array<ShaderRegister, 2>{{{0x207, DistanceVector}, {0x1ff, 0}}}
+        : std::array<ShaderRegister, 2>{{{0x1b6, 0}, {0x1c5, 9}}};
+    registered.specials = {{0x25b, 0x8040}, {0x2d5, 0x2000}, 0, {}, {}, {0x29b, 2}, {0x260, 0}};
+    registered.shader.sh_registers = registered.registers.data();
+    registered.shader.num_sh_registers = registered.registers.size();
+    registered.shader.cx_registers = registered.context.data();
+    registered.shader.num_cx_registers = registered.context.size();
+    registered.shader.specials = &registered.specials;
     AgcDriverRegisterShader_nid_postfix(&registered.shader);
 }
 
@@ -196,6 +212,10 @@ int main(int argc, char** argv) {
         Register(VertexShader, VertexCode.data(), sizeof(VertexCode), 2);
         Register(PixelShader, PixelCode.data(), sizeof(PixelCode), 1);
         for (const auto& step : Steps) {
+            const std::array<ShaderRegister, 1> context{{{0x207, step.control}}};
+            const std::array<ShaderRegister, 1> primitive{{{0x242, 4}}};
+            const std::array<const Shader*, 2> stages{&VertexShader.shader, &PixelShader.shader};
+            AgcDriverResolveGraphicsStagesAbi_nid_postfix(stages, context, primitive);
             std::array<Vertex, 3> vertices{};
             for (std::size_t i = 0; i < vertices.size(); ++i) {
                 vertices[i] = {{PositionX[i], PositionY[i], 0.5f, 1.0f}, {step.component0[i], step.component1[i], step.component2[i], 0.0f}};
@@ -211,9 +231,11 @@ int main(int argc, char** argv) {
             AgcDriver::GuestMemory::Read(static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(ColorMemory)), colors);
             Check(step, colors);
         }
+        AgcDriverShutdown_nid_postfix();
         std::puts(noKey ? "vertex clip and cull distance draws passed without the draw key" : "vertex clip and cull distance draws passed");
         return 0;
     } catch (const std::exception& error) {
+        try { AgcDriverShutdown_nid_postfix(); } catch (const std::exception&) {}
         std::cerr << error.what() << '\n';
         return 1;
     }
