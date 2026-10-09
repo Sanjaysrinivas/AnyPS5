@@ -37,11 +37,13 @@ struct Case {
     std::uint32_t records;
     bool inRange;
     const char* what;
+    bool primitiveId = false;
+    std::uint32_t firstInstance = 0;
 };
 
 std::array<std::uint32_t, 4> VertexBufferDescriptor(const Case& value) {
     const auto address = reinterpret_cast<std::uintptr_t>(Element.data());
-    return {static_cast<std::uint32_t>(address), static_cast<std::uint32_t>((address >> 32u) & 0xffffu), value.records, 0x0104dfacu | (value.select << 28u)};
+    return {static_cast<std::uint32_t>(address), static_cast<std::uint32_t>((address >> 32u) & 0xffffu), value.records, (value.primitiveId ? 0x00014204u : 0x0104dfacu) | (value.select << 28u)};
 }
 
 std::array<std::uint32_t, 4> OutputDescriptor() {
@@ -60,7 +62,7 @@ void Draw(AgcDriver::VulkanDevice& device, const Case& value) {
     ShaderRecompiler::ShaderVertexStageInfo info{};
     info.resourcesNum = 1;
     info.resources[0].fields = VertexBufferDescriptor(value);
-    info.resourcesDst[0] = {8, 4, 0, 0};
+    info.resourcesDst[0] = {8, 4, 0, value.primitiveId ? 1u : 0u};
     info.fetchAttribReg = 8;
     info.fetchBufferReg = 10;
     info.fetchEmbedded = true;
@@ -112,17 +114,22 @@ void Draw(AgcDriver::VulkanDevice& device, const Case& value) {
     state.blend.colorWriteMask = 15;
     state.blends = {state.blend};
     state.blendConstants = {};
-    const AgcDriver::Pm4::DrawParameters draw{0, Vertices, 0, 1, 0, false};
+    AgcDriver::Pm4::DrawParameters draw{0, Vertices, 0, 1, 0, false};
+    draw.firstInstance = value.firstInstance;
     device.Draw(state, draw, shaders);
     device.WaitIdle();
 }
 
 void Check(const Case& value) {
+    std::array<std::uint32_t, 4> expected{};
+    if (value.inRange) {
+        if (value.primitiveId) expected = {std::bit_cast<std::uint32_t>(Element[0]), 0, 0, 1};
+        else for (std::uint32_t component = 0; component < 4u; ++component) expected[component] = std::bit_cast<std::uint32_t>(Element[component]);
+    }
     for (std::uint32_t vertex = 0; vertex < Vertices; ++vertex) {
         for (std::uint32_t component = 0; component < 4u; ++component) {
-            const auto expected = value.inRange ? std::bit_cast<std::uint32_t>(Element[component]) : 0u;
             const auto actual = Output[vertex * 4u + component];
-            Require(actual == expected, std::string(value.what) + ": vertex " + std::to_string(vertex) + " v" + std::to_string(8u + component) + " is " + std::to_string(actual) + ", expected " + std::to_string(expected));
+            Require(actual == expected[component], std::string(value.what) + ": vertex " + std::to_string(vertex) + " v" + std::to_string(8u + component) + " is " + std::to_string(actual) + ", expected " + std::to_string(expected[component]));
         }
     }
 }
@@ -133,7 +140,9 @@ int main() {
     try {
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
-        constexpr std::array<Case, 5> cases{{
+        constexpr std::array<Case, 7> cases{{
+            {2u, 1u, true, "R32_UINT instance attribute, one record", true, 0u},
+            {2u, 1u, true, "R32_UINT instance attribute, nonzero first instance", true, 17u},
             {2u, 1u, true, "OOB_SELECT 2, one record"},
             {2u, 0u, false, "OOB_SELECT 2, no records"},
             {3u, 16u, true, "OOB_SELECT 3, whole element in range"},
