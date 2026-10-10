@@ -113,8 +113,6 @@ std::shared_ptr<const ShaderSnapshot> ProgramSnapshot(const ShaderRegistry& shad
     return ReadRawShader(address);
 }
 
-namespace {
-
 void AwaitRegisteredPreparation(PreparedShaders& prepared, std::unique_lock<std::mutex>& lock) {
     prepared.settled.wait(lock, [&] { return !prepared.pending; });
     if (prepared.failure != nullptr) std::rethrow_exception(prepared.failure);
@@ -132,8 +130,6 @@ bool ProgramUsesWorkgroup(const ShaderSnapshot& snapshot, std::size_t codeOffset
     });
     if (codeOffset == 0) snapshot.workgroupUse->store(used ? Used : Unused, std::memory_order_release);
     return used;
-}
-
 }
 
 bool VertexWorkgroupRequired(const QueueState& queue, const ShaderRegistry& registry) {
