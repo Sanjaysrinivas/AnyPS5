@@ -625,22 +625,30 @@ static int setupSaveDataMemory2(const SaveDataMemorySetup2* setup_param, SaveDat
     if (!have) {
         existed = 0;
     }
+    const std::string param_path = mem_path(setup_param->user_id, setup_param->slot_id, "param");
+    std::size_t param_bytes = 0;
+    const bool have_param = file_size_of(param_path, &param_bytes);
+    const bool write_param = setup_param->init_param != nullptr && (setup_param->option & 1u) != 0;
     // First run: create a zero-filled blob and report existed size 0 so the title treats it as a new save.
-    if (!have || existed < setup_param->memory_size) {
+    if (!have || existed < setup_param->memory_size || (write_param && !have_param)) {
         std::error_code ec;
         std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
-        std::vector<char> data;
-        if (have && !read_file_all(path, data)) {
-            return SAVE_DATA_ERROR_INTERNAL;
-        }
-        data.resize(setup_param->memory_size, 0);
-        if (!write_file_replace(path, data)) {
-            return SAVE_DATA_ERROR_INTERNAL;
-        }
-        if (setup_param->init_param != nullptr && (setup_param->option & 1u) != 0) {
+        if (write_param) {
             std::vector<char> pd(sizeof(SaveDataParam));
             std::memcpy(pd.data(), setup_param->init_param, sizeof(SaveDataParam));
-            write_file_replace(mem_path(setup_param->user_id, setup_param->slot_id, "param"), pd);
+            if (!write_file_replace(param_path, pd)) {
+                return SAVE_DATA_ERROR_INTERNAL;
+            }
+        }
+        if (!have || existed < setup_param->memory_size) {
+            std::vector<char> data;
+            if (have && !read_file_all(path, data)) {
+                return SAVE_DATA_ERROR_INTERNAL;
+            }
+            data.resize(setup_param->memory_size, 0);
+            if (!write_file_replace(path, data)) {
+                return SAVE_DATA_ERROR_INTERNAL;
+            }
         }
     }
     if (result != nullptr) {

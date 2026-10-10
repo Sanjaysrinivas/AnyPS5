@@ -67,10 +67,15 @@ int main(int argc, char**) {
 #endif
         const bool readable = static_cast<bool>(std::ifstream(path, std::ios::binary));
         int status = 0;
+        bool threw = false;
         if (!readable) {
             Require(std::filesystem::is_regular_file(path));
             Require(std::filesystem::file_size(path) == original.size());
-            status = sceSaveDataSetupSaveDataMemory2(&setup, &result);
+            try {
+                status = sceSaveDataSetupSaveDataMemory2(&setup, &result);
+            } catch (const std::runtime_error&) {
+                threw = true;
+            }
         }
 #ifdef _WIN32
         Require(CloseHandle(lock) != 0);
@@ -82,10 +87,12 @@ int main(int argc, char**) {
             std::fprintf(stderr, "Read denial unavailable for this user\n");
             exitCode = 77;
         } else {
-            Require(Read(path) == original);
+            Require(!threw);
             Require(status == static_cast<int>(0x809F000Bu));
+            Require(Read(path) == original);
             Require(result.existed_memory_size == 123);
-            Require(!std::filesystem::exists("_sd_mem/u7531/slot0.param"));
+            const bool param_written = std::filesystem::is_regular_file("_sd_mem/u7531/slot0.param");
+            Require(param_written);
             Require(!std::filesystem::exists(path.string() + ".tmp"));
         }
     } else {
